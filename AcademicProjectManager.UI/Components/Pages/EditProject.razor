@@ -1,0 +1,188 @@
+@page "/projects/edit"
+@page "/projects/edit/{Id:int}"
+@rendermode InteractiveServer
+@inject IProjectService ProjectService
+@inject NavigationManager NavigationManager
+@inject Microsoft.Extensions.Logging.ILogger<EditProject> Logger
+
+<PageTitle>Edit Project</PageTitle>
+
+<h1>@(Id.HasValue ? "Edit Project" : "Create Project")</h1>
+
+<div class="card-panel">
+    @if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <div class="alert alert-danger">@_errorMessage</div>
+    }
+
+    <form>
+        <div class="mb-3">
+            <label class="form-label">Title</label>
+            <input type="text" class="form-control @(_titleErrors.Any() ? "is-invalid" : "")" 
+                   value="@_title" @oninput="@((ChangeEventArgs e) => _title = (string?)e.Value ?? "")" />
+            @if (_titleErrors.Any())
+            {
+                <div class="invalid-feedback d-block">@string.Join(", ", _titleErrors)</div>
+            }
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Description</label>
+            <textarea class="form-control @(_descErrors.Any() ? "is-invalid" : "")" 
+                      rows="4" @oninput="@((ChangeEventArgs e) => _description = (string?)e.Value ?? "")">@_description</textarea>
+            @if (_descErrors.Any())
+            {
+                <div class="invalid-feedback d-block">@string.Join(", ", _descErrors)</div>
+            }
+        </div>
+
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label">Start Date</label>
+                <input type="date" class="form-control" value="@_startDate.ToString("yyyy-MM-dd")" 
+                       @onchange="@((ChangeEventArgs e) => { if (DateTime.TryParse((string?)e.Value, out var dt)) _startDate = dt; })" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Deadline</label>
+                <input type="date" class="form-control" value="@_deadline.ToString("yyyy-MM-dd")" 
+                       @onchange="@((ChangeEventArgs e) => { if (DateTime.TryParse((string?)e.Value, out var dt)) _deadline = dt; })" />
+            </div>
+        </div>
+
+        <div class="form-check mt-3 mb-4">
+            <input type="checkbox" class="form-check-input" @onchange="@((ChangeEventArgs e) => _isCompleted = (bool?)e.Value ?? false)" />
+            <label class="form-check-label">Project completed</label>
+        </div>
+
+        <button class="btn btn-primary" type="button" @onclick="HandleSaveClick">Save</button>
+        <a class="btn btn-outline-secondary ms-2" href="/projects">Cancel</a>
+    </form>
+</div>
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private string _title = "";
+    private string _description = "";
+    private DateTime _startDate = new DateTime(2026, 5, 22);
+    private DateTime _deadline = new DateTime(2026, 6, 22);
+    private bool _isCompleted = false;
+    private string? _errorMessage;
+    private List<string> _titleErrors = new();
+    private List<string> _descErrors = new();
+    private bool _saving = false;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!Id.HasValue)
+        {
+            return;
+        }
+
+        try
+        {
+            var project = await ProjectService.GetByIdAsync(Id.Value);
+            if (project is not null)
+            {
+                _title = project.Title;
+                _description = project.Description;
+                _startDate = project.StartDate;
+                _deadline = project.Deadline;
+                _isCompleted = project.IsCompleted;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load project");
+        }
+    }
+
+    private List<string> ValidateTitle(string title)
+    {
+        var errors = new List<string>();
+        if (string.IsNullOrWhiteSpace(title))
+            errors.Add("Title is required");
+        if (title.Length > 200)
+            errors.Add("Title must be 200 characters or less");
+        return errors;
+    }
+
+    private List<string> ValidateDescription(string description)
+    {
+        var errors = new List<string>();
+        if (string.IsNullOrWhiteSpace(description))
+            errors.Add("Description is required");
+        if (description.Length > 1000)
+            errors.Add("Description must be 1000 characters or less");
+        return errors;
+    }
+
+    private async Task HandleSaveClick()
+    {
+        if (_saving)
+            return;
+
+        _saving = true;
+        Console.WriteLine($"[DEBUG] Save clicked - Title: '{_title}', Desc: '{_description}'");
+        Logger.LogInformation("[HandleSaveClick] Button clicked - Title='{Title}', Description='{Description}'", _title, _description);
+        
+        try
+        {
+            await SaveAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ERROR] Exception in HandleSaveClick: {ex}");
+            Logger.LogError(ex, "[HandleSaveClick] Exception occurred");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _titleErrors = ValidateTitle(_title);
+        _descErrors = ValidateDescription(_description);
+        _errorMessage = null;
+
+        if (_titleErrors.Any() || _descErrors.Any())
+        {
+            Logger.LogWarning("Project validation failed: Title errors={TitleErrors}, Desc errors={DescErrors}", 
+                _titleErrors.Count, _descErrors.Count);
+            return;
+        }
+
+        try
+        {
+            var project = new Project
+            {
+                Id = Id ?? 0,
+                Title = _title,
+                Description = _description,
+                StartDate = _startDate,
+                Deadline = _deadline,
+                IsCompleted = _isCompleted
+            };
+
+            if (Id.HasValue)
+            {
+                await ProjectService.UpdateAsync(project);
+                Logger.LogInformation("Updated project {ProjectId}", Id.Value);
+            }
+            else
+            {
+                await ProjectService.CreateAsync(project);
+                Logger.LogInformation("Created new project: {Title}", _title);
+            }
+
+            NavigationManager.NavigateTo("/projects");
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+            Logger.LogError(ex, "Failed to save project");
+        }
+    }
+}

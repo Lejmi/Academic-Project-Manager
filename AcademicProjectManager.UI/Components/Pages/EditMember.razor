@@ -1,0 +1,213 @@
+@page "/members/edit"
+@page "/members/edit/{Id:int}"
+@rendermode InteractiveServer
+@inject IMemberService MemberService
+@inject NavigationManager NavigationManager
+@inject Microsoft.Extensions.Logging.ILogger<EditMember> Logger
+@inject Microsoft.Extensions.Logging.ILogger<EditMember> Logger
+
+<PageTitle>Edit Member</PageTitle>
+
+<h1>@(Id.HasValue ? "Edit Member" : "Create Member")</h1>
+
+<div class="card-panel">
+    @if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <div class="alert alert-danger">@_errorMessage</div>
+    }
+
+    <form>
+        <div class="row g-3 mb-3">
+            <div class="col-md-6">
+                <label class="form-label">First Name</label>
+                <input type="text" class="form-control @(_firstNameErrors.Any() ? "is-invalid" : "")" 
+                       value="@_firstName" @oninput="@((ChangeEventArgs e) => _firstName = (string?)e.Value ?? "")" />
+                @if (_firstNameErrors.Any())
+                {
+                    <div class="invalid-feedback d-block">@string.Join(", ", _firstNameErrors)</div>
+                }
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Last Name</label>
+                <input type="text" class="form-control @(_lastNameErrors.Any() ? "is-invalid" : "")" 
+                       value="@_lastName" @oninput="@((ChangeEventArgs e) => _lastName = (string?)e.Value ?? "")" />
+                @if (_lastNameErrors.Any())
+                {
+                    <div class="invalid-feedback d-block">@string.Join(", ", _lastNameErrors)</div>
+                }
+            </div>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Email</label>
+            <input type="email" class="form-control @(_emailErrors.Any() ? "is-invalid" : "")" 
+                   value="@_email" @oninput="@((ChangeEventArgs e) => _email = (string?)e.Value ?? "")" />
+            @if (_emailErrors.Any())
+            {
+                <div class="invalid-feedback d-block">@string.Join(", ", _emailErrors)</div>
+            }
+        </div>
+
+        <div class="mb-4">
+            <label class="form-label">Role</label>
+            <input type="text" class="form-control @(_roleErrors.Any() ? "is-invalid" : "")" 
+                   value="@_role" @oninput="@((ChangeEventArgs e) => _role = (string?)e.Value ?? "")" />
+            @if (_roleErrors.Any())
+            {
+                <div class="invalid-feedback d-block">@string.Join(", ", _roleErrors)</div>
+            }
+        </div>
+
+        <button class="btn btn-primary" type="button" @onclick="HandleSaveClick">Save</button>
+        <a class="btn btn-outline-secondary ms-2" href="/members">Cancel</a>
+    </form>
+</div>
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private string _firstName = "";
+    private string _lastName = "";
+    private string _email = "";
+    private string _role = "";
+    private string? _errorMessage;
+    private List<string> _firstNameErrors = new();
+    private List<string> _lastNameErrors = new();
+    private List<string> _emailErrors = new();
+    private List<string> _roleErrors = new();
+    private bool _saving = false;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!Id.HasValue)
+        {
+            return;
+        }
+
+        try
+        {
+            var member = await MemberService.GetByIdAsync(Id.Value);
+            if (member is not null)
+            {
+                _firstName = member.FirstName;
+                _lastName = member.LastName;
+                _email = member.Email;
+                _role = member.Role;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load member");
+        }
+    }
+
+    private List<string> ValidateFirstName(string firstName)
+    {
+        var errors = new List<string>();
+        if (string.IsNullOrWhiteSpace(firstName))
+            errors.Add("First Name is required");
+        if (firstName.Length > 100)
+            errors.Add("First Name must be 100 characters or less");
+        return errors;
+    }
+
+    private List<string> ValidateLastName(string lastName)
+    {
+        var errors = new List<string>();
+        if (string.IsNullOrWhiteSpace(lastName))
+            errors.Add("Last Name is required");
+        if (lastName.Length > 100)
+            errors.Add("Last Name must be 100 characters or less");
+        return errors;
+    }
+
+    private List<string> ValidateEmail(string email)
+    {
+        var errors = new List<string>();
+        if (string.IsNullOrWhiteSpace(email))
+            errors.Add("Email is required");
+        if (!email.Contains("@"))
+            errors.Add("Email must be valid");
+        if (email.Length > 255)
+            errors.Add("Email must be 255 characters or less");
+        return errors;
+    }
+
+    private List<string> ValidateRole(string role)
+    {
+        var errors = new List<string>();
+        if (string.IsNullOrWhiteSpace(role))
+            errors.Add("Role is required");
+        if (role.Length > 100)
+            errors.Add("Role must be 100 characters or less");
+        return errors;
+    }
+
+    private async Task HandleSaveClick()
+    {
+        if (_saving)
+            return;
+
+        _saving = true;
+        Logger.LogInformation("[HandleSaveClick] Button clicked - FirstName='{FirstName}', LastName='{LastName}', Email='{Email}', Role='{Role}'", 
+            _firstName, _lastName, _email, _role);
+        
+        try
+        {
+            await SaveAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "[HandleSaveClick] Exception occurred");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _firstNameErrors = ValidateFirstName(_firstName);
+        _lastNameErrors = ValidateLastName(_lastName);
+        _emailErrors = ValidateEmail(_email);
+        _roleErrors = ValidateRole(_role);
+        _errorMessage = null;
+
+        if (_firstNameErrors.Any() || _lastNameErrors.Any() || _emailErrors.Any() || _roleErrors.Any())
+        {
+            Logger.LogWarning("Member validation failed");
+            return;
+        }
+
+        try
+        {
+            var member = new Member
+            {
+                Id = Id ?? 0,
+                FirstName = _firstName,
+                LastName = _lastName,
+                Email = _email,
+                Role = _role
+            };
+
+            if (Id.HasValue)
+            {
+                await MemberService.UpdateAsync(member);
+                Logger.LogInformation("Updated member {MemberId}", Id.Value);
+            }
+            else
+            {
+                await MemberService.CreateAsync(member);
+                Logger.LogInformation("Created new member: {FirstName} {LastName}", _firstName, _lastName);
+            }
+
+            NavigationManager.NavigateTo("/members");
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+            Logger.LogError(ex, "Failed to save member");
+        }
+    }
+}

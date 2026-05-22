@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="AcademicProjectManager.Data/AcademicProjectManager.Data.csproj" />
+  <Project Path="AcademicProjectManager.Services/AcademicProjectManager.Services.csproj" />
+  <Project Path="AcademicProjectManager.UI/AcademicProjectManager.UI.csproj" />
+</Solution>

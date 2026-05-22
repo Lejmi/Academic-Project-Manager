@@ -1,0 +1,58 @@
+@page "/projects"
+@inject IProjectService ProjectService
+
+<PageTitle>Projects</PageTitle>
+
+<div class="page-header">
+    <h1>Projects</h1>
+    <a class="btn btn-primary" href="/projects/edit">New Project</a>
+</div>
+
+@if (_projects.Count == 0)
+{
+    <div class="card-panel">No projects created yet.</div>
+}
+else
+{
+    <div class="card-panel">
+        <table class="table table-hover align-middle">
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Start Date</th>
+                    <th>Deadline</th>
+                    <th>Status</th>
+                    <th class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var project in _projects)
+                {
+                    <tr>
+                        <td>@project.Title</td>
+                        <td>@project.StartDate.ToString("dd MMM yyyy")</td>
+                        <td>@project.Deadline.ToString("dd MMM yyyy")</td>
+                        <td>
+                            <span class="badge @(project.IsCompleted ? "text-bg-success" : "text-bg-warning")">
+                                @(project.IsCompleted ? "Completed" : "Active")
+                            </span>
+                        </td>
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-outline-secondary" href="/projects/@project.Id">Details</a>
+                            <a class="btn btn-sm btn-outline-primary" href="/projects/edit/@project.Id">Edit</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private IReadOnlyList<Project> _projects = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _projects = await ProjectService.GetAllAsync();
+    }
+}

@@ -1,0 +1,206 @@
+﻿@page "/"
+@rendermode InteractiveServer
+@inject IProjectService ProjectService
+@inject IMemberService MemberService
+@inject ITaskService TaskService
+
+<PageTitle>Dashboard</PageTitle>
+
+<div class="dashboard-hero">
+	<div>
+		<h1>Academic Project Analytics Dashboard</h1>
+		<p>Real-time project health, delay signals, and predictive workload insights for smarter task assignment.</p>
+	</div>
+	<button class="btn btn-primary" @onclick="RefreshAsync">Refresh Analytics</button>
+</div>
+
+<div class="kpi-grid mb-4">
+	<div class="kpi-card">
+		<h6>Active Projects</h6>
+		<h2>@_projectScores.Count(x => x.HealthScore < 100 || x.TotalTasks > 0)</h2>
+	</div>
+	<div class="kpi-card">
+		<h6>Delayed Tasks</h6>
+		<h2>@_projectScores.Sum(x => x.OverdueTasks)</h2>
+	</div>
+	<div class="kpi-card">
+		<h6>Avg. Health Score</h6>
+		<h2>@(_projectScores.Count == 0 ? 0 : Math.Round(_projectScores.Average(x => x.HealthScore), 1))%</h2>
+	</div>
+</div>
+
+<div class="row g-4 mb-4">
+	<div class="col-xl-7">
+		<div class="card-panel h-100">
+			<h4>Project Health Overview</h4>
+			@if (_projectScores.Count == 0)
+			{
+				<p>No project health data available.</p>
+			}
+			else
+			{
+				@foreach (var score in _projectScores)
+				{
+					<div class="mb-3">
+						<div class="d-flex justify-content-between">
+							<strong>@score.ProjectTitle</strong>
+							<span class="health-pill @GetHealthClass(score.HealthScore)">@score.HealthScore%</span>
+						</div>
+						<div class="progress mt-2" style="height: 10px;">
+							<div class="progress-bar" role="progressbar" style="width: @score.CompletionRate%;"></div>
+						</div>
+						<small>@score.CompletionRate% complete | @score.OverdueTasks delayed task(s)</small>
+					</div>
+				}
+			}
+		</div>
+	</div>
+
+	<div class="col-xl-5">
+		<div class="card-panel h-100">
+			<h4>Member Completion Rate</h4>
+			<div class="table-responsive">
+				<table class="table table-sm align-middle">
+					<thead>
+						<tr>
+							<th>Member</th>
+							<th>Completed</th>
+							<th>Rate</th>
+						</tr>
+					</thead>
+					<tbody>
+						@foreach (var member in _memberPerformance.OrderByDescending(m => m.CompletionRate))
+						{
+							<tr>
+								<td><strong>@member.MemberName</strong></td>
+								<td>@member.CompletedTasks / @member.TotalAssignedTasks</td>
+								<td>
+									<div class="progress" style="height: 20px;">
+										<div class="progress-bar @GetCompletionClass(member.CompletionRate)" role="progressbar" style="width: @member.CompletionRate%;"></div>
+									</div>
+									<small>@member.CompletionRate%</small>
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		</div>
+	</div>
+</div>
+
+<div class="row g-4">
+	<div class="col-xl-6">
+		<div class="card-panel h-100">
+			<h4>Workload Balance</h4>
+			<div class="table-responsive">
+				<table class="table table-sm align-middle">
+					<thead>
+						<tr>
+							<th>Member</th>
+							<th>Workload</th>
+							<th>Completion</th>
+						</tr>
+					</thead>
+					<tbody>
+						@foreach (var member in _memberPerformance.OrderByDescending(m => m.Workload).Take(8))
+						{
+							<tr>
+								<td><strong>@member.MemberName</strong></td>
+								<td>
+									<span class="badge bg-info">@member.Workload active</span>
+								</td>
+								<td>
+									<div class="progress" style="height: 20px;">
+										<div class="progress-bar @GetCompletionClass(member.CompletionRate)" role="progressbar" style="width: @member.CompletionRate%;"></div>
+									</div>
+									<small>@member.CompletionRate%</small>
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		</div>
+	</div>
+
+	<div class="col-xl-6">
+		<div class="card-panel h-100">
+			<h4>Predictive Delay Warning</h4>
+			@if (_predictiveRisks.Count == 0)
+			{
+				<p>No high-risk task assignments detected.</p>
+			}
+			else
+			{
+				@foreach (var risk in _predictiveRisks)
+				{
+					<div class="risk-item">
+						<div class="d-flex justify-content-between">
+							<strong>@risk.TaskTitle</strong>
+							<span class="risk-level @risk.RiskLevel.ToLowerInvariant()">@risk.RiskLevel (@risk.RiskFactor%)</span>
+						</div>
+						<small>@risk.MemberName in @risk.ProjectTitle</small>
+						<p class="mb-0">@risk.Recommendation</p>
+					</div>
+				}
+			}
+		</div>
+	</div>
+</div>
+
+@code {
+	private IReadOnlyList<ProjectHealthScoreResult> _projectScores = [];
+	private IReadOnlyList<MemberPerformanceResult> _memberPerformance = [];
+	private IReadOnlyList<PredictiveRiskResult> _predictiveRisks = [];
+
+	protected override async Task OnInitializedAsync()
+	{
+		await RefreshAsync();
+	}
+
+	private async Task RefreshAsync()
+	{
+		await TaskService.CalculateDelaysAsync();
+		_projectScores = await ProjectService.GetAllProjectHealthScoresAsync();
+		_memberPerformance = await MemberService.GetAllMemberPerformanceAsync();
+		_predictiveRisks = (await TaskService.GetPredictiveRisksAsync()).Take(5).ToList();
+
+		StateHasChanged();
+	}
+
+	private static string GetCompletionClass(double completionRate)
+	{
+		if (completionRate >= 75)
+		{
+			return "bg-success";
+		}
+
+		if (completionRate >= 50)
+		{
+			return "bg-info";
+		}
+
+		if (completionRate >= 25)
+		{
+			return "bg-warning";
+		}
+
+		return "bg-danger";
+	}
+
+	private static string GetHealthClass(double healthScore)
+	{
+		if (healthScore > 80)
+		{
+			return "healthy";
+		}
+
+		if (healthScore > 50)
+		{
+			return "warning";
+		}
+
+		return "critical";
+	}
+}

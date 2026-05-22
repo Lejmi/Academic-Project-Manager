@@ -1,0 +1,228 @@
+@page "/projects/{Id:int}"
+@rendermode InteractiveServer
+@inject IProjectService ProjectService
+@inject ITaskService TaskService
+@inject IMemberService MemberService
+
+<PageTitle>Project Details</PageTitle>
+
+@if (_project is null)
+{
+    <p>Loading project...</p>
+}
+else
+{
+    <div class="page-header">
+        <h1>@_project.Title</h1>
+        <a class="btn btn-outline-secondary" href="/projects">Back to Projects</a>
+    </div>
+
+    <div class="card-panel mb-4">
+        <p>@_project.Description</p>
+        <p>
+            <strong>Start:</strong> @_project.StartDate.ToString("dd MMM yyyy")
+            <span class="ms-3"><strong>Deadline:</strong> @_project.Deadline.ToString("dd MMM yyyy")</span>
+        </p>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-5">
+            <div class="card-panel h-100">
+                <h5>Add Task</h5>
+                
+                @if (!string.IsNullOrEmpty(_taskError))
+                {
+                    <div class="alert alert-danger">@_taskError</div>
+                }
+
+                <form>
+                    <div class="mb-2">
+                        <label class="form-label">Title</label>
+                        <input type="text" class="form-control @(_titleErrors.Any() ? "is-invalid" : "")" 
+                               value="@_newTaskTitle" @oninput="@((ChangeEventArgs e) => _newTaskTitle = (string?)e.Value ?? "")" />
+                        @if (_titleErrors.Any())
+                        {
+                            <div class="invalid-feedback d-block">@string.Join(", ", _titleErrors)</div>
+                        }
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-control @(_descErrors.Any() ? "is-invalid" : "")" 
+                                  rows="3" @oninput="@((ChangeEventArgs e) => _newTaskDescription = (string?)e.Value ?? "")">@_newTaskDescription</textarea>
+                        @if (_descErrors.Any())
+                        {
+                            <div class="invalid-feedback d-block">@string.Join(", ", _descErrors)</div>
+                        }
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="form-label">Deadline</label>
+                        <input type="date" class="form-control" value="@_newTaskDeadline.ToString("yyyy-MM-dd")" 
+                               @onchange="@((ChangeEventArgs e) => { if (DateTime.TryParse((string?)e.Value, out var dt)) _newTaskDeadline = dt; })" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Assigned Member</label>
+                        <select class="form-select" value="@(_newTaskAssignedMemberId?.ToString() ?? "0")" @onchange="@((ChangeEventArgs e) => { if (int.TryParse((string?)e.Value, out var id) && id > 0) _newTaskAssignedMemberId = id; else _newTaskAssignedMemberId = null; })">
+                            <option value="0">Select member</option>
+                            @foreach (var member in _members)
+                            {
+                                <option value="@member.Id">@member.FirstName @member.LastName</option>
+                            }
+                        </select>
+                    </div>
+
+                    <button class="btn btn-primary" type="button" @onclick="HandleAddTaskClick">Create Task</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="col-lg-7">
+            <div class="card-panel h-100">
+                <h5>Task Board</h5>
+                @if (_tasks.Count == 0)
+                {
+                    <p>No tasks yet.</p>
+                }
+                else
+                {
+                    <table class="table table-sm align-middle">
+                        <thead>
+                            <tr>
+                                <th>Task</th>
+                                <th>Assigned To</th>
+                                <th>Deadline</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var task in _tasks)
+                            {
+                                <tr>
+                                    <td>
+                                        @task.Title
+                                        @if (task.IsOverdue)
+                                        {
+                                            <span class="badge text-bg-danger ms-2">Delayed</span>
+                                        }
+                                    </td>
+                                    <td>@task.AssignedMember?.FirstName @task.AssignedMember?.LastName</td>
+                                    <td>@task.Deadline.ToString("dd MMM")</td>
+                                    <td>
+                                        <select class="form-select form-select-sm" value="@task.Status" @onchange="@(e => UpdateTaskStatusAsync(task.Id, e.Value?.ToString()))">
+                                            @foreach (var statusValue in Enum.GetValues<TaskWorkflowStatus>())
+                                            {
+                                                <option value="@statusValue">@statusValue</option>
+                                            }
+                                        </select>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private Project? _project;
+    private IReadOnlyList<ProjectTask> _tasks = [];
+    private IReadOnlyList<Member> _members = [];
+    private ProjectTask _newTask = new();
+    
+    private string _newTaskTitle = "";
+    private string _newTaskDescription = "";
+    private DateTime _newTaskDeadline = DateTime.UtcNow.Date.AddDays(7);
+    private int? _newTaskAssignedMemberId = null;
+    private string? _taskError;
+    private List<string> _titleErrors = new();
+    private List<string> _descErrors = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _project = await ProjectService.GetByIdAsync(Id);
+        _tasks = await TaskService.GetByProjectIdAsync(Id);
+        _members = await MemberService.GetAllAsync();
+
+        _newTaskTitle = "";
+        _newTaskDescription = "";
+        _newTaskDeadline = DateTime.UtcNow.Date.AddDays(7);
+        _newTaskAssignedMemberId = null;
+        _titleErrors.Clear();
+        _descErrors.Clear();
+        _taskError = null;
+    }
+
+    private List<string> ValidateTaskTitle(string title)
+    {
+        var errors = new List<string>();
+        if (string.IsNullOrWhiteSpace(title))
+            errors.Add("Task title is required");
+        if (title.Length > 200)
+            errors.Add("Title must be 200 characters or less");
+        return errors;
+    }
+
+    private List<string> ValidateTaskDescription(string description)
+    {
+        var errors = new List<string>();
+        if (string.IsNullOrWhiteSpace(description))
+            errors.Add("Description is required");
+        if (description.Length > 1000)
+            errors.Add("Description must be 1000 characters or less");
+        return errors;
+    }
+
+    private async Task HandleAddTaskClick()
+    {
+        _titleErrors = ValidateTaskTitle(_newTaskTitle);
+        _descErrors = ValidateTaskDescription(_newTaskDescription);
+        _taskError = null;
+
+        if (_titleErrors.Any() || _descErrors.Any())
+        {
+            return;
+        }
+
+        try
+        {
+            var task = new ProjectTask
+            {
+                ProjectId = Id,
+                Title = _newTaskTitle,
+                Description = _newTaskDescription,
+                Deadline = _newTaskDeadline,
+                AssignedMemberId = _newTaskAssignedMemberId ?? 0,
+                Status = TaskWorkflowStatus.Pending
+            };
+
+            await TaskService.CreateAsync(task);
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _taskError = ex.Message;
+        }
+    }
+
+    private async Task UpdateTaskStatusAsync(int taskId, string? selectedStatus)
+    {
+        if (!Enum.TryParse<TaskWorkflowStatus>(selectedStatus, true, out var status))
+        {
+            return;
+        }
+
+        await TaskService.UpdateTaskStatusAsync(taskId, status);
+        await LoadDataAsync();
+    }
+}

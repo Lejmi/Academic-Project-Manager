@@ -1,0 +1,33 @@
+# Build artifacts
+bin/
+obj/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# Rider
+.idea/
+
+# VS Code
+.vscode/
+
+# SQLite DB
+*.db
+AcademicProjectManager.db
+
+# Generated PDF
+Academic_Project_Manager_Documentation.pdf
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+
+# OS files
+Thumbs.db
+.DS_Store
